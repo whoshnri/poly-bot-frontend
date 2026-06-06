@@ -1,0 +1,27 @@
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider } from "./hooks/useAuth";
+import { LoginPage, ProtectedLayout } from "./pages/LoginPage";
+import { PlaygroundPage } from "./pages/PlaygroundPage";
+import { SettingsPage } from "./pages/SettingsPage";
+import { ThemeProvider } from "./hooks/useTheme";
+import "./style.css";
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<ProtectedLayout />}>
+              <Route index element={<PlaygroundPage />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path=":sessionId" element={<PlaygroundPage />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
