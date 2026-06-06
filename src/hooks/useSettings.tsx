@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ApiError } from "../api/client";
 import {
   fetchRunReadinessRequest,
   fetchSettingsRequest,
@@ -38,15 +39,28 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadReadiness = useCallback(async () => {
-    const nextReadiness = await fetchRunReadinessRequest();
-    setReadiness(nextReadiness);
-    setSettings((current) => (current ? { ...current, readiness: nextReadiness } : current));
-    return nextReadiness;
+    try {
+      const nextReadiness = await fetchRunReadinessRequest();
+      setReadiness(nextReadiness);
+      setSettings((current) => (current ? { ...current, readiness: nextReadiness } : current));
+      return nextReadiness;
+    } catch (err: unknown) {
+      if (err instanceof ApiError && err.status === 401) {
+        throw err;
+      }
+      const message = err instanceof Error ? err.message : "Failed to load readiness.";
+      setError(message);
+      throw err;
+    }
   }, []);
 
   useEffect(() => {
     loadSettings()
       .catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 401) {
+          setError("Session expired. Sign in again.");
+          return;
+        }
         setError(err instanceof Error ? err.message : "Failed to load settings.");
       })
       .finally(() => setLoading(false));

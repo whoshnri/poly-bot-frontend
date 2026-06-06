@@ -119,14 +119,19 @@ export function PlaygroundPage() {
 
   const ensureReadyToRun = useCallback(
     async (action: PendingRunAction): Promise<boolean> => {
-      const latest = readiness ?? (await loadReadiness());
-      if (latest.canRunBot) {
-        return true;
+      try {
+        const latest = readiness ?? (await loadReadiness());
+        if (latest.canRunBot) {
+          return true;
+        }
+        pendingRunRef.current = action;
+        setStatus(latest.message ?? "Finish account setup before running the bot.");
+        openOnboarding();
+        return false;
+      } catch (error: unknown) {
+        setStatus(error instanceof Error ? error.message : "Failed to verify account setup.");
+        return false;
       }
-      pendingRunRef.current = action;
-      setStatus(latest.message ?? "Finish account setup before running the bot.");
-      openOnboarding();
-      return false;
     },
     [loadReadiness, openOnboarding, readiness],
   );
