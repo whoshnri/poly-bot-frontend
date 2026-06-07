@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./hooks/useAuth";
 import { LoginPage, ProtectedLayout } from "./pages/LoginPage";
 import { PlaygroundPage } from "./pages/PlaygroundPage";
+import { ExplorePage } from "./pages/ExplorePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ThemeProvider } from "./hooks/useTheme";
 import "./style.css";
@@ -14,7 +15,7 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<ProtectedLayout />}>
-              <Route index element={<PlaygroundPage />} />
+              <Route index element={<ExplorePage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path=":sessionId" element={<PlaygroundPage />} />
             </Route>

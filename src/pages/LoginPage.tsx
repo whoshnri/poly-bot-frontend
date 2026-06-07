@@ -148,7 +148,7 @@ export function ProtectedLayout() {
 
 function ProtectedShell() {
   const { user, loading } = useAuth();
-  const sessionsState = useSessions();
+  const sessionsState = useSessions(user?.userId ?? null);
   const { settings, readiness, loading: settingsLoading, saving, error, saveSettings } = useSettings();
   const { sessions, deleteSession } = sessionsState;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);

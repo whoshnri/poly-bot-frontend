@@ -2,26 +2,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate, useParams } from "react-router-dom";
 import { submitFeedbackRequest, fetchPendingFeedbackRequest } from "../api/sessions";
+import { useAuth } from "../hooks/useAuth";
 import { useEventStream } from "../hooks/useEventStream";
 import { useOnboarding } from "../hooks/useOnboarding";
 import { useSettings } from "../hooks/useSettings";
 import type { ChatMessageItem } from "../types";
 import { buildChatView, createLocalUserMessage, isBotSleeping } from "../lib/chatView";
+import { isPendingStartForSession } from "../lib/sessionCache";
 import { ChatThread } from "../components/ChatThread";
 import { FeedbackCard } from "../components/FeedbackCard";
 import { useShellContext } from "./LoginPage";
 
-const START_DISCOVERY_INSTRUCTION = "Start active market discovery.";
-
 type PendingRunAction =
-  | { type: "start"; instruction: string }
   | { type: "resume"; sessionId: string }
   | { type: "continue"; sessionId: string; instruction: string };
 
 export function PlaygroundPage() {
   const { sessionId } = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
-  const { sessions, loadSessions, startSession, resumeSession } = useShellContext();
+  const { user } = useAuth();
+  const { sessions, loadSessions, resumeSession, clearPendingStartForUser } = useShellContext();
   const { readiness, loading: settingsLoading, loadReadiness } = useSettings();
   const { openOnboarding } = useOnboarding();
   const activeSessionId = sessionId ?? null;
@@ -57,36 +57,19 @@ export function PlaygroundPage() {
     setIsRunning(false);
   }, [activeSessionId, resetEvents]);
 
+  useEffect(() => {
+    if (!activeSessionId || !user?.userId) {
+      return;
+    }
+
+    const started = events.some((event) => event.kind === "graph-run-start");
+    if (started) {
+      clearPendingStartForUser();
+    }
+  }, [activeSessionId, clearPendingStartForUser, events, user?.userId]);
+
   const executePendingRun = useCallback(
     async (action: PendingRunAction) => {
-      if (action.type === "start") {
-        const userMessage = createLocalUserMessage(action.instruction);
-        setLocalMessages([userMessage]);
-        setIsRunning(true);
-        setStatus("Starting session from your instruction...");
-        try {
-          const data = await startSession(action.instruction);
-          if (data.sessionId) navigate(`/${data.sessionId}`);
-          setStatus(data.message);
-        } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : "Failed to start session.";
-          setStatus(message);
-          setLocalMessages((current) => [
-            ...current,
-            {
-              id: `local-error-${Date.now()}`,
-              role: "bot",
-              content: `Could not start session: ${message}`,
-              subtitle: "Request error",
-              timestamp: new Date().toISOString(),
-              variant: "error",
-            },
-          ]);
-          setIsRunning(false);
-        }
-        return;
-      }
-
       if (action.type === "continue") {
         const userMessage = createLocalUserMessage(action.instruction);
         setLocalMessages((current) => [...current, userMessage]);
@@ -114,7 +97,7 @@ export function PlaygroundPage() {
         setIsRunning(false);
       }
     },
-    [navigate, resumeSession, startSession],
+    [navigate, resumeSession],
   );
 
   const ensureReadyToRun = useCallback(
@@ -135,35 +118,6 @@ export function PlaygroundPage() {
     },
     [loadReadiness, openOnboarding, readiness],
   );
-
-  const handleContinueInstruction = useCallback(
-    async (instruction: string) => {
-      if (!activeSessionId) return;
-      if (!(await ensureReadyToRun({ type: "continue", sessionId: activeSessionId, instruction }))) {
-        return;
-      }
-      await executePendingRun({ type: "continue", sessionId: activeSessionId, instruction });
-    },
-    [activeSessionId, ensureReadyToRun, executePendingRun],
-  );
-
-  const handleSendInstruction = useCallback(
-    async (instruction: string) => {
-      if (botSleeping && activeSessionId) {
-        await handleContinueInstruction(instruction);
-        return;
-      }
-      if (!(await ensureReadyToRun({ type: "start", instruction }))) {
-        return;
-      }
-      await executePendingRun({ type: "start", instruction });
-    },
-    [activeSessionId, botSleeping, ensureReadyToRun, executePendingRun, handleContinueInstruction],
-  );
-
-  const handleStartFlow = useCallback(async () => {
-    await handleSendInstruction(START_DISCOVERY_INSTRUCTION);
-  }, [handleSendInstruction]);
 
   const handleFeedbackSubmit = useCallback(
     async (answer: {
@@ -213,11 +167,19 @@ export function PlaygroundPage() {
     return false;
   }, [events]);
 
+  const suppressResume = Boolean(
+    user?.userId &&
+      activeSessionId &&
+      (isPendingStartForSession(user.userId, activeSessionId) ||
+        activeSession?.resume.justStarted),
+  );
+
   const canResumeSession = Boolean(
     activeSession?.resume.canContinue &&
       activeSession.resume.mode === "continue" &&
       !isRunning &&
-      !feedback,
+      !feedback &&
+      !suppressResume,
   );
 
   const showResumeBanner = canResumeSession;
@@ -249,6 +211,12 @@ export function PlaygroundPage() {
     pendingRunRef.current = null;
     void executePendingRun(pending);
   }, [executePendingRun, readiness?.canRunBot]);
+
+  useEffect(() => {
+    if (!activeSessionId) {
+      navigate("/", { replace: true });
+    }
+  }, [activeSessionId, navigate]);
 
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden">
@@ -284,28 +252,6 @@ export function PlaygroundPage() {
       </motion.div>
 
       <motion.div layout className="shrink-0 px-4 pb-safe pt-3 backdrop-blur md:border-transparent md:bg-transparent md:px-8 md:pb-4 dark:border-white/10 dark:bg-black/30 md:dark:bg-transparent">
-        {!activeSessionId ? (
-          <div className="mx-auto mb-4 w-full max-w-3xl rounded-2xl border border-slate-300/70 bg-white/90 p-4 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.35)] backdrop-blur dark:border-white/15 dark:bg-neutral-900/90 dark:shadow-[0_20px_60px_-30px_rgba(0,0,0,0.9)]">
-            <p className="text-sm leading-relaxed text-slate-600 dark:text-neutral-300">
-              Start the flow to load 10 active markets, select one or more for Tavily research, then review the deterministic ranking before approving any trade.
-            </p>
-            {!settingsLoading && readiness && !readiness.canRunBot ? (
-              <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">
-                {readiness.message ?? "Configure your AI provider before starting."}
-              </p>
-            ) : null}
-            <button
-              type="button"
-              className="mt-3 min-h-11 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-              disabled={isRunning || settingsLoading}
-              onClick={() => {
-                void handleStartFlow();
-              }}
-            >
-              {isRunning ? "Starting..." : "Start market flow"}
-            </button>
-          </div>
-        ) : null}
         {showResumeBanner ? (
           <div className="mx-auto mb-4 w-full max-w-3xl rounded-2xl border border-amber-300/70 bg-amber-50/85 p-4 dark:border-amber-400/30 dark:bg-amber-950/30">
             <p className="text-sm text-amber-950 dark:text-amber-100">
@@ -330,6 +276,13 @@ export function PlaygroundPage() {
             >
               {isRunning ? "Continuing..." : "Continue session"}
             </button>
+          </div>
+        ) : null}
+        {botSleeping && activeSessionId ? (
+          <div className="mx-auto w-full max-w-3xl rounded-2xl border border-slate-300/70 bg-white/90 p-4 dark:border-white/15 dark:bg-neutral-900/90">
+            <p className="text-sm text-slate-600 dark:text-neutral-300">
+              The bot is sleeping. Send a new instruction in chat to pivot or wake it.
+            </p>
           </div>
         ) : null}
       </motion.div>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { FeedbackRequestItem } from "../types";
+import { MarkdownContent } from "./MarkdownContent";
 import { MarketOptionRow, RankedMarketList } from "./MarketOptionRow";
 
 type FeedbackCardProps = {
@@ -60,9 +61,9 @@ export function FeedbackCard({
         </span>
       </header>
 
-      <h3 className="mb-3 text-base leading-relaxed text-slate-900 dark:text-neutral-100">
-        {feedback.question}
-      </h3>
+      <div className="mb-3 text-base leading-relaxed text-slate-900 dark:text-neutral-100">
+        <MarkdownContent content={feedback.question} />
+      </div>
 
       {isDecideGate ? (
         <p className="mb-4 text-sm leading-relaxed text-slate-500 dark:text-neutral-400">

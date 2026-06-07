@@ -5,16 +5,25 @@ import type {
   SessionSummary,
   StartSessionResponse,
 } from "../types";
+import type { DiscoverMarketOption } from "../lib/preSessionDraft";
+
+export type PreSessionPayload = {
+  topic: string;
+  summary?: string;
+  queries: string[];
+  selectedMarketId: string;
+  markets: DiscoverMarketOption[];
+};
 
 export async function fetchSessionsRequest() {
   const data = await apiRequest<{ sessions: SessionSummary[] }>("/api/sessions");
   return data.sessions;
 }
 
-export async function startSessionRequest(instruction: string) {
+export async function startSessionRequest(instruction: string, preSession?: PreSessionPayload) {
   const data = await apiRequest<StartSessionResponse>("/api/sessions/start", {
     method: "POST",
-    body: { instruction },
+    body: preSession ? { instruction, preSession } : { instruction },
   });
   const { success: _success, ...session } = data;
   return session;

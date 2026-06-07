@@ -10,6 +10,7 @@ export type SessionResumeState = {
   mode: SessionResumeMode;
   phase: string;
   message: string;
+  justStarted?: boolean;
 };
 
 export type SessionSummary = {
