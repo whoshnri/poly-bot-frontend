@@ -52,7 +52,7 @@ export function ResearchSummaryCard({ summary, compact = false }: ResearchSummar
               href={source.url}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-block truncate text-xs text-sky-700 underline-offset-2 hover:underline dark:text-sky-300"
+              className="mt-2 inline-block line-clamp-1 truncate text-xs text-sky-700 underline-offset-2 hover:underline dark:text-sky-300"
             >
               {source.url}
             </a>

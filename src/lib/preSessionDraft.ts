@@ -2,6 +2,7 @@ export type DiscoverMarketOption = {
   marketId: string;
   question: string;
   eventTitle?: string;
+  tokenIds?: string[];
   score: number;
   volume?: number;
   liquidity?: number;
