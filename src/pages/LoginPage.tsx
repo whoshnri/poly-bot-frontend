@@ -14,6 +14,7 @@ import { useAuth } from "../hooks/useAuth";
 import { OnboardingContextProvider } from "../hooks/useOnboarding";
 import { SettingsProvider, useSettings } from "../hooks/useSettings";
 import { useSessions } from "../hooks/useSessions";
+import { ShellStatusProvider, useShellStatus } from "../hooks/useShellStatus";
 import { OnboardingModal } from "../components/OnboardingModal";
 import { SessionsRail } from "../components/SessionsRail";
 
@@ -141,8 +142,40 @@ function SessionSkeleton() {
 export function ProtectedLayout() {
   return (
     <SettingsProvider>
-      <ProtectedShell />
+      <ShellStatusProvider>
+        <ProtectedShell />
+      </ShellStatusProvider>
     </SettingsProvider>
+  );
+}
+
+function MobileHeader({
+  status,
+  onOpenNav,
+}: {
+  status: string;
+  onOpenNav: () => void;
+}) {
+  return (
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-300/70 bg-white/95 backdrop-blur dark:border-white/10 dark:bg-black/90 md:hidden">
+      <div className="flex h-[calc(3.5rem+env(safe-area-inset-top))] items-end gap-2 px-3 pb-2 pt-[env(safe-area-inset-top)]">
+        <button
+          type="button"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 shadow-sm dark:border-white/15 dark:bg-black/80 dark:text-neutral-100"
+          onClick={onOpenNav}
+          aria-label="Open sessions menu"
+        >
+          <List size={20} />
+        </button>
+        <p
+          className="min-w-0 flex-1 truncate text-center text-sm font-medium text-slate-700 dark:text-neutral-200"
+          aria-live="polite"
+        >
+          {status}
+        </p>
+        <div className="h-11 w-11 shrink-0" aria-hidden="true" />
+      </div>
+    </header>
   );
 }
 
@@ -166,10 +199,25 @@ function ProtectedShell() {
   const activeSessionId = location.pathname.startsWith("/settings")
     ? null
     : (params.sessionId ?? null);
+  const { status: shellStatus, setStatus: setShellStatus } = useShellStatus();
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
 
   useEffect(() => {
     setOnboardingDismissed(false);
   }, [user?.userId]);
+
+  useEffect(() => {
+    if (location.pathname === "/settings") {
+      setShellStatus("Settings");
+      return;
+    }
+    if (location.pathname === "/") {
+      return;
+    }
+    if (activeSession) {
+      setShellStatus(activeSession.resume.phase || activeSession.name || "Session");
+    }
+  }, [activeSession, location.pathname, setShellStatus]);
 
   useEffect(() => {
     if (settingsLoading || onboardingDismissed) {
@@ -212,14 +260,7 @@ function ProtectedShell() {
   return (
     <OnboardingContextProvider value={onboardingContextValue}>
       <div className="playground-scrollbars h-dvh overflow-hidden bg-[radial-gradient(circle_at_0%_0%,#f2f5fb_0%,#e7edf5_45%,#dbe4ef_100%)] text-slate-900 md:p-3 dark:bg-[radial-gradient(circle_at_0%_0%,#272727_0%,#161616_45%,#111111_100%)] dark:text-neutral-100">
-      <button
-        type="button"
-        className="fixed left-4 top-[max(0.75rem,env(safe-area-inset-top))] z-50 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-300 bg-white/90 text-slate-700 shadow-sm md:hidden dark:border-white/15 dark:bg-black/80 dark:text-neutral-100"
-        onClick={() => setMobileNavOpen(true)}
-        aria-label="Open sessions menu"
-      >
-        <List size={20} />
-      </button>
+      <MobileHeader status={shellStatus} onOpenNav={() => setMobileNavOpen(true)} />
       <LayoutGroup id="app-shell">
         <div className="mx-auto flex h-dvh max-w-7xl gap-0 md:h-[calc(100dvh-1.5rem)] md:gap-4">
           <SessionsRail
@@ -239,7 +280,7 @@ function ProtectedShell() {
             transition={{
               layout: { duration: 0.26, ease: [0.22, 1, 0.36, 1] },
             }}
-            className="min-w-0 flex-1 overflow-hidden border-slate-300/70 bg-white/70 md:rounded-2xl md:border dark:border-white/10 dark:bg-black/20"
+            className="min-w-0 flex-1 overflow-hidden border-slate-300/70 bg-white/70 pt-[calc(3.5rem+env(safe-area-inset-top))] md:rounded-2xl md:border md:pt-0 dark:border-white/10 dark:bg-black/20"
           >
             <Outlet context={sessionsState} />
           </motion.main>

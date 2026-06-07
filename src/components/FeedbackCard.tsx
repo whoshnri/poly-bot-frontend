@@ -6,6 +6,8 @@ import { MarketOptionRow, RankedMarketList } from "./MarketOptionRow";
 type FeedbackCardProps = {
   feedback: FeedbackRequestItem;
   submitting: boolean;
+  submitLabel?: string;
+  onDismiss?: () => void;
   onSubmit: (answer: {
     selectedOption?: string;
     selectedOptions?: string[];
@@ -19,6 +21,8 @@ const APPROVE_OPTIONS = ["Yes, place order", "No, cancel"];
 export function FeedbackCard({
   feedback,
   submitting,
+  submitLabel,
+  onDismiss,
   onSubmit,
 }: FeedbackCardProps) {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
@@ -56,9 +60,20 @@ export function FeedbackCard({
                 ? "Build your shortlist"
                 : "Needs your input"}
         </span>
-        <span className="text-[11px] uppercase text-slate-500 dark:text-neutral-400">
-          {feedback.type.replaceAll("_", " ")}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] uppercase text-slate-500 dark:text-neutral-400">
+            {feedback.type.replaceAll("_", " ")}
+          </span>
+          {onDismiss ? (
+            <button
+              type="button"
+              className="rounded-full border border-slate-300 px-2.5 py-1 text-[11px] text-slate-600 hover:bg-slate-100 dark:border-white/15 dark:text-neutral-300 dark:hover:bg-white/10"
+              onClick={onDismiss}
+            >
+              Hide
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <div className="mb-3 text-base leading-relaxed text-slate-900 dark:text-neutral-100">
@@ -191,7 +206,11 @@ export function FeedbackCard({
           <button
             type="button"
             className="min-h-11 w-full rounded-full bg-slate-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 sm:w-auto dark:bg-neutral-100 dark:text-neutral-900"
-            disabled={submitting || (isDecideGate && !selectedOption)}
+            disabled={
+              submitting ||
+              (isDecideGate && !selectedOption) ||
+              (isMultiSelect && selectedOptions.length === 0)
+            }
             onClick={() => {
               if (isMultipleChoice || isDecideGate) {
                 onSubmit({ selectedOption: selectedOption ?? undefined });
@@ -211,7 +230,7 @@ export function FeedbackCard({
               });
             }}
           >
-            {submitting ? "Submitting..." : "Submit answer"}
+            {submitting ? "Submitting..." : submitLabel ?? "Submit answer"}
           </button>
         )}
 

@@ -55,6 +55,8 @@ export type PendingFeedback = {
   maxSelections?: number;
   reason: string;
   createdAt: string;
+  phase?: string;
+  rankedMarkets?: RankedMarketItem[];
 };
 
 export type BotUiEventKind =

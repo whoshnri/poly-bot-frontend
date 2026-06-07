@@ -12,6 +12,7 @@ export type PreSessionPayload = {
   summary?: string;
   queries: string[];
   selectedMarketId: string;
+  selectedMarketIds: string[];
   markets: DiscoverMarketOption[];
   exploreMessages?: Array<{ role: "user" | "bot"; content: string }>;
 };

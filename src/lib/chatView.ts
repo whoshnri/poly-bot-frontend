@@ -1,4 +1,10 @@
-import type { BotUiEvent, ChatMessageItem, FeedbackRequestItem, FeedbackType } from "../types";
+import type {
+  BotUiEvent,
+  ChatMessageItem,
+  FeedbackRequestItem,
+  FeedbackType,
+  PendingFeedback,
+} from "../types";
 import { readRankedMarketsFromFeedback } from "./messagePresentation";
 
 export function formatDate(value: string): string {
@@ -322,6 +328,22 @@ export function hasInFlightGraphRun(events: BotUiEvent[]): boolean {
   }
 
   return true;
+}
+
+export function pendingFeedbackToRequestItem(pending: PendingFeedback): FeedbackRequestItem {
+  return {
+    id: `pending-${pending.requestId}`,
+    requestId: pending.requestId,
+    type: pending.type,
+    question: pending.question,
+    options: pending.options,
+    minSelections: pending.minSelections,
+    maxSelections: pending.maxSelections,
+    answered: false,
+    timestamp: pending.createdAt,
+    workflowPhase: pending.phase,
+    rankedMarkets: pending.rankedMarkets,
+  };
 }
 
 export function exploreMessagesToChatItems(

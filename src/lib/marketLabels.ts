@@ -1,3 +1,5 @@
+import type { DiscoverMarketOption } from "./preSessionDraft";
+
 export type ParsedMarketLabel = {
   marketId: string | null;
   question: string;
@@ -40,4 +42,14 @@ export function confidenceTone(value: number): "low" | "medium" | "high" {
     return "medium";
   }
   return "low";
+}
+
+export function formatExploreMarketOption(
+  market: Pick<DiscoverMarketOption, "marketId" | "question">,
+): string {
+  return `[${market.marketId}] ${market.question}`;
+}
+
+export function parseMarketIdFromOption(option: string): string | null {
+  return parseMarketOptionLabel(option).marketId;
 }

@@ -7,11 +7,13 @@ import { useEventStream } from "../hooks/useEventStream";
 import { useOnboarding } from "../hooks/useOnboarding";
 import { useSettings } from "../hooks/useSettings";
 import type { ChatMessageItem } from "../types";
+import { useShellStatus } from "../hooks/useShellStatus";
 import {
   buildChatView,
   createLocalUserMessage,
   hasInFlightGraphRun,
   isBotSleeping,
+  pendingFeedbackToRequestItem,
 } from "../lib/chatView";
 import { isPendingStartForSession } from "../lib/sessionCache";
 import { ChatThread } from "../components/ChatThread";
@@ -30,10 +32,13 @@ export function PlaygroundPage() {
   const { sessions, loadSessions, resumeSession, clearPendingStartForUser } = useShellContext();
   const { readiness, loading: settingsLoading, loadReadiness } = useSettings();
   const { openOnboarding } = useOnboarding();
+  const { setStatus: setShellStatus } = useShellStatus();
   const activeSessionId = sessionId ?? null;
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState("Ready.");
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [apiFeedback, setApiFeedback] = useState<ReturnType<typeof pendingFeedbackToRequestItem> | null>(null);
+  const [feedbackDismissed, setFeedbackDismissed] = useState(false);
   const [localMessages, setLocalMessages] = useState<ChatMessageItem[]>([]);
   const pendingRunRef = useRef<PendingRunAction | null>(null);
   const autoResumedRef = useRef<string | null>(null);
@@ -50,8 +55,16 @@ export function PlaygroundPage() {
     onRunFinished,
   });
 
-  const { messages, feedback } = useMemo(() => buildChatView(events, localMessages), [events, localMessages]);
+  const { messages, feedback: streamFeedback } = useMemo(
+    () => buildChatView(events, localMessages),
+    [events, localMessages],
+  );
+  const feedback = streamFeedback ?? apiFeedback;
   const botSleeping = useMemo(() => isBotSleeping(events), [events]);
+
+  useEffect(() => {
+    setShellStatus(status);
+  }, [setShellStatus, status]);
 
   useEffect(() => {
     if (!threadRef.current) return;
@@ -62,6 +75,8 @@ export function PlaygroundPage() {
     resetEvents();
     setLocalMessages([]);
     setIsRunning(false);
+    setApiFeedback(null);
+    setFeedbackDismissed(false);
     autoResumedRef.current = null;
   }, [activeSessionId, resetEvents]);
 
@@ -142,6 +157,8 @@ export function PlaygroundPage() {
       setIsRunning(true);
       try {
         const result = await submitFeedbackRequest(activeSessionId, answer);
+        setApiFeedback(null);
+        setFeedbackDismissed(false);
         setStatus(result.message);
       } catch (error: unknown) {
         setStatus(error instanceof Error ? error.message : "Failed to submit feedback.");
@@ -156,9 +173,27 @@ export function PlaygroundPage() {
   const greeting = "Good to see you";
 
   useEffect(() => {
-    if (!activeSessionId) return;
-    fetchPendingFeedbackRequest(activeSessionId).catch(() => {});
+    if (!activeSessionId) {
+      return;
+    }
+
+    fetchPendingFeedbackRequest(activeSessionId)
+      .then(({ pending }) => {
+        if (pending) {
+          setApiFeedback(pendingFeedbackToRequestItem(pending));
+        } else {
+          setApiFeedback(null);
+        }
+      })
+      .catch(() => {});
   }, [activeSessionId]);
+
+  useEffect(() => {
+    if (streamFeedback) {
+      setApiFeedback(null);
+      setFeedbackDismissed(false);
+    }
+  }, [streamFeedback]);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? null,
@@ -267,6 +302,7 @@ export function PlaygroundPage() {
       suppressResume ||
       isRunning ||
       feedback ||
+      apiFeedback ||
       hasInFlightGraphRun(events)
     ) {
       return;
@@ -297,6 +333,7 @@ export function PlaygroundPage() {
     feedback,
     isRunning,
     readiness?.canRunBot,
+    apiFeedback,
     resumeSession,
     suppressResume,
   ]);
@@ -314,7 +351,7 @@ export function PlaygroundPage() {
       </p>
       <motion.div
         layout
-        className="no-scrollbar flex-1 overflow-y-auto overscroll-y-contain px-4 pb-6 pt-[calc(3.5rem+env(safe-area-inset-top))] md:px-8 md:pb-8 md:pt-6"
+        className="no-scrollbar flex-1 overflow-y-auto overscroll-y-contain px-4 pb-6 pt-3 md:px-8 md:pb-8 md:pt-6"
         ref={threadRef}
       >
         {activeSession?.resume.phase ? (
@@ -328,7 +365,10 @@ export function PlaygroundPage() {
           isRunning={isRunning && !feedback}
           greeting={greeting}
           feedback={feedback}
+          feedbackDismissed={feedbackDismissed}
           feedbackSubmitting={feedbackSubmitting}
+          onFeedbackDismiss={() => setFeedbackDismissed(true)}
+          onFeedbackRestore={() => setFeedbackDismissed(false)}
           onFeedbackSubmit={(answer) => {
             void handleFeedbackSubmit(answer);
           }}

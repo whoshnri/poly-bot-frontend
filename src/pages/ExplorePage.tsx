@@ -5,6 +5,7 @@ import { discoverChatRequest, discoverRunRequest } from "../api/discover";
 import { useAuth } from "../hooks/useAuth";
 import { useOnboarding } from "../hooks/useOnboarding";
 import { useSettings } from "../hooks/useSettings";
+import { useShellStatus } from "../hooks/useShellStatus";
 import type { DiscoverMarketOption } from "../lib/preSessionDraft";
 import {
   clearPreSessionDraft,
@@ -13,6 +14,8 @@ import {
 } from "../lib/preSessionDraft";
 import { ChatThread } from "../components/ChatThread";
 import { exploreMessagesToChatItems } from "../lib/chatView";
+import { formatExploreMarketOption, parseMarketIdFromOption } from "../lib/marketLabels";
+import type { FeedbackRequestItem } from "../types";
 import { useShellContext } from "./LoginPage";
 
 type ExploreMessage = {
@@ -37,6 +40,7 @@ export function ExplorePage() {
   const { startSession, clearPendingStartForUser } = useShellContext();
   const { readiness, loading: settingsLoading, loadReadiness } = useSettings();
   const { openOnboarding } = useOnboarding();
+  const { setStatus: setShellStatus } = useShellStatus();
 
   const draft = readPreSessionDraft();
   const [messages, setMessages] = useState<ExploreMessage[]>(() =>
@@ -58,12 +62,10 @@ export function ExplorePage() {
   const [topic, setTopic] = useState(draft?.topic ?? "");
   const [queries, setQueries] = useState<string[]>(draft?.queries ?? []);
   const [markets, setMarkets] = useState<DiscoverMarketOption[]>(draft?.markets ?? []);
-  const [selectedMarketId, setSelectedMarketId] = useState<string | null>(
-    draft?.selectedMarketId ?? null,
-  );
   const [chatLoading, setChatLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [marketPickerDismissed, setMarketPickerDismissed] = useState(false);
   const [status, setStatus] = useState("Ready.");
   const threadRef = useRef<HTMLDivElement>(null);
 
@@ -72,20 +74,17 @@ export function ExplorePage() {
       topic: string;
       queries: string[];
       markets: DiscoverMarketOption[];
-      selectedMarketId: string;
       messages: ExploreMessage[];
     }>) => {
       const nextTopic = patch.topic ?? topic;
       const nextQueries = patch.queries ?? queries;
       const nextMarkets = patch.markets ?? markets;
       const nextMessages = patch.messages ?? messages;
-      const nextSelected = patch.selectedMarketId ?? selectedMarketId ?? undefined;
 
       writePreSessionDraft({
         topic: nextTopic,
         queries: nextQueries,
         markets: nextMarkets,
-        selectedMarketId: nextSelected,
         messages: nextMessages.map((entry) => ({
           role: entry.role,
           content: entry.content,
@@ -94,13 +93,17 @@ export function ExplorePage() {
         updatedAt: Date.now(),
       });
     },
-    [markets, messages, queries, selectedMarketId, topic],
+    [markets, messages, queries, topic],
   );
+
+  useEffect(() => {
+    setShellStatus(status);
+  }, [setShellStatus, status]);
 
   useEffect(() => {
     if (!threadRef.current) return;
     threadRef.current.scrollTop = threadRef.current.scrollHeight;
-  }, [messages, markets, chatLoading, searchLoading]);
+  }, [messages, markets, chatLoading, searchLoading, marketPickerDismissed]);
 
   const ensureReady = useCallback(async () => {
     const latest = readiness ?? (await loadReadiness());
@@ -124,18 +127,17 @@ export function ExplorePage() {
         setTopic(result.topic || nextTopic);
         setQueries(result.queries);
         setMarkets(result.markets);
-        setSelectedMarketId(result.markets[0]?.marketId ?? null);
+        setMarketPickerDismissed(false);
         persistDraft({
           topic: result.topic || nextTopic,
           queries: result.queries,
           markets: result.markets,
-          selectedMarketId: result.markets[0]?.marketId,
         });
 
         const botMessage = createMessage(
           "bot",
           result.markets.length > 0
-            ? `Found **${result.markets.length}** active markets. Pick one below, then start a session to run Tavily research and the trade workflow.`
+            ? `Found **${result.markets.length}** active markets. Pick one or more in the card below to start research and the trade workflow.`
             : "I couldn't find active markets for that topic. Try refining your idea or search terms.",
         );
         setMessages((current) => {
@@ -143,7 +145,7 @@ export function ExplorePage() {
           persistDraft({ messages: next });
           return next;
         });
-        setStatus("Search complete.");
+        setStatus("Pick markets to research");
       } catch (error: unknown) {
         setStatus(error instanceof Error ? error.message : "Market search failed.");
       } finally {
@@ -208,66 +210,90 @@ export function ExplorePage() {
     }
   }, [chatLoading, input, messages, persistDraft, queries, runDiscoverSearch, topic]);
 
-  const handleStartSession = useCallback(async () => {
-    if (!selectedMarketId || !user?.userId) {
-      return;
-    }
+  const handleMarketSelection = useCallback(
+    async (answer: { selectedOptions?: string[] }) => {
+      const selectedOptions = answer.selectedOptions ?? [];
+      const selectedMarketIds = selectedOptions
+        .map((option) => parseMarketIdFromOption(option))
+        .filter((marketId): marketId is string => Boolean(marketId));
 
-    const selected = markets.find((market) => market.marketId === selectedMarketId);
-    if (!selected) {
-      return;
-    }
-
-    if (!(await ensureReady())) {
-      return;
-    }
-
-    setStarting(true);
-    setStatus("Starting session with your selected market...");
-    try {
-      const sessionTopic = topic.trim() || selected.question;
-      const lastBotReply = [...messages].reverse().find((entry) => entry.role === "bot")?.content;
-      const data = await startSession(
-        `Research and evaluate markets about: ${sessionTopic}`,
-        {
-          topic: sessionTopic,
-          summary: lastBotReply?.trim() || sessionTopic,
-          queries,
-          selectedMarketId: selected.marketId,
-          markets,
-          exploreMessages: messages.slice(-6).map((entry) => ({
-            role: entry.role,
-            content: entry.content,
-          })),
-        },
-      );
-      clearPreSessionDraft();
-      clearPendingStartForUser();
-      if (data.sessionId) {
-        navigate(`/${data.sessionId}`);
+      if (selectedMarketIds.length === 0 || !user?.userId) {
+        return;
       }
-      setStatus(data.message);
-    } catch (error: unknown) {
-      setStatus(error instanceof Error ? error.message : "Failed to start session.");
-    } finally {
-      setStarting(false);
-    }
-  }, [
-    clearPendingStartForUser,
-    ensureReady,
-    markets,
-    navigate,
-    queries,
-    selectedMarketId,
-    startSession,
-    topic,
-    user?.userId,
-  ]);
 
-  const selectedMarket = useMemo(
-    () => markets.find((market) => market.marketId === selectedMarketId) ?? null,
-    [markets, selectedMarketId],
+      if (!(await ensureReady())) {
+        return;
+      }
+
+      const primaryMarketId = selectedMarketIds[0]!;
+      const selectedMarkets = markets.filter((market) =>
+        selectedMarketIds.includes(market.marketId),
+      );
+
+      setStarting(true);
+      setStatus("Starting session...");
+      try {
+        const sessionTopic = topic.trim() || selectedMarkets[0]?.question || "Selected markets";
+        const lastBotReply = [...messages].reverse().find((entry) => entry.role === "bot")?.content;
+        const data = await startSession(
+          `Research and evaluate markets about: ${sessionTopic}`,
+          {
+            topic: sessionTopic,
+            summary: lastBotReply?.trim() || sessionTopic,
+            queries,
+            selectedMarketId: primaryMarketId,
+            selectedMarketIds,
+            markets,
+            exploreMessages: messages.slice(-6).map((entry) => ({
+              role: entry.role,
+              content: entry.content,
+            })),
+          },
+        );
+        clearPreSessionDraft();
+        clearPendingStartForUser();
+        if (data.sessionId) {
+          navigate(`/${data.sessionId}`);
+        }
+        setStatus(data.message);
+      } catch (error: unknown) {
+        setStatus(error instanceof Error ? error.message : "Failed to start session.");
+      } finally {
+        setStarting(false);
+      }
+    },
+    [
+      clearPendingStartForUser,
+      ensureReady,
+      markets,
+      messages,
+      navigate,
+      queries,
+      startSession,
+      topic,
+      user?.userId,
+    ],
   );
+
+  const marketFeedback = useMemo((): FeedbackRequestItem | null => {
+    if (markets.length === 0) {
+      return null;
+    }
+
+    return {
+      id: "explore-market-picker",
+      requestId: "explore-market-picker",
+      type: "multi_select",
+      question:
+        "Which markets should we research? Pick one or more — I'll run Tavily research, score them, and walk you through approval.",
+      options: markets.map((market) => formatExploreMarketOption(market)),
+      minSelections: 1,
+      maxSelections: markets.length,
+      answered: false,
+      timestamp: new Date().toISOString(),
+      workflowPhase: "EXPLORE",
+    };
+  }, [markets]);
 
   const chatMessages = useMemo(() => exploreMessagesToChatItems(messages), [messages]);
 
@@ -278,64 +304,25 @@ export function ExplorePage() {
       </p>
       <motion.div
         layout
-        className="no-scrollbar flex-1 overflow-y-auto overscroll-y-contain px-4 pb-6 pt-[calc(3.5rem+env(safe-area-inset-top))] md:px-8 md:pb-8 md:pt-6"
+        className="no-scrollbar flex-1 overflow-y-auto overscroll-y-contain px-4 pb-6 pt-3 md:px-8 md:pb-8 md:pt-6"
         ref={threadRef}
       >
-        <div className="mx-auto w-full max-w-3xl space-y-4">
-          <ChatThread
-            messages={chatMessages}
-            isRunning={chatLoading || searchLoading}
-            greeting="What should we explore?"
-            emptyDescription="Tell me a topic, event, or thesis and I'll help you find active Polymarket markets before starting research."
-            showTimestamps={false}
-          />
-
-          {markets.length > 0 ? (
-            <section className="rounded-2xl border border-slate-300/70 bg-white/90 p-4 dark:border-white/15 dark:bg-black/30">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-neutral-100">
-                Active markets
-              </h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-neutral-400">
-                Ranked by relevance, volume, and liquidity. Select one to start the workflow at
-                research.
-              </p>
-              <ul className="mt-3 space-y-2">
-                {markets.map((market) => {
-                  const selected = market.marketId === selectedMarketId;
-                  return (
-                    <li key={market.marketId}>
-                      <button
-                        type="button"
-                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${
-                          selected
-                            ? "border-emerald-500 bg-emerald-50 dark:border-emerald-400 dark:bg-emerald-950/40"
-                            : "border-slate-300/70 bg-white hover:bg-slate-50 dark:border-white/15 dark:bg-black/20 dark:hover:bg-white/5"
-                        }`}
-                        onClick={() => {
-                          setSelectedMarketId(market.marketId);
-                          persistDraft({ selectedMarketId: market.marketId });
-                        }}
-                      >
-                        <p className="text-sm font-medium text-slate-900 dark:text-neutral-100">
-                          {market.question}
-                        </p>
-                        {market.eventTitle ? (
-                          <p className="mt-1 text-xs text-slate-500 dark:text-neutral-400">
-                            {market.eventTitle}
-                          </p>
-                        ) : null}
-                        <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-500 dark:text-neutral-500">
-                          Score {market.score.toFixed(2)}
-                          {market.volume ? ` · Vol ${Math.round(market.volume).toLocaleString()}` : ""}
-                        </p>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ) : null}
-        </div>
+        <ChatThread
+          messages={chatMessages}
+          isRunning={chatLoading || searchLoading || starting}
+          greeting="What should we explore?"
+          emptyDescription="Tell me a topic, event, or thesis and I'll help you find active Polymarket markets before starting research."
+          showTimestamps={false}
+          feedback={marketFeedback}
+          feedbackDismissed={marketPickerDismissed}
+          feedbackSubmitting={starting}
+          feedbackSubmitLabel="Start research"
+          onFeedbackDismiss={() => setMarketPickerDismissed(true)}
+          onFeedbackRestore={() => setMarketPickerDismissed(false)}
+          onFeedbackSubmit={(answer) => {
+            void handleMarketSelection(answer);
+          }}
+        />
       </motion.div>
 
       <motion.div
@@ -347,19 +334,6 @@ export function ExplorePage() {
             <p className="text-sm text-amber-700 dark:text-amber-300">
               {readiness.message ?? "Configure your AI provider before starting."}
             </p>
-          ) : null}
-
-          {selectedMarket ? (
-            <button
-              type="button"
-              className="min-h-11 w-full rounded-full bg-emerald-700 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50 dark:bg-emerald-300 dark:text-emerald-950"
-              disabled={starting || settingsLoading}
-              onClick={() => {
-                void handleStartSession();
-              }}
-            >
-              {starting ? "Starting session…" : `Start session on “${selectedMarket.question.slice(0, 48)}${selectedMarket.question.length > 48 ? "…" : ""}”`}
-            </button>
           ) : null}
 
           <form
@@ -374,12 +348,12 @@ export function ExplorePage() {
               placeholder="Describe what you want to trade on…"
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              disabled={chatLoading || searchLoading}
+              disabled={chatLoading || searchLoading || starting}
             />
             <button
               type="submit"
               className="min-h-11 shrink-0 rounded-full bg-slate-900 px-5 text-sm font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-              disabled={chatLoading || searchLoading || input.trim().length === 0}
+              disabled={chatLoading || searchLoading || starting || input.trim().length === 0}
             >
               Send
             </button>

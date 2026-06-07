@@ -1,9 +1,10 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./hooks/useAuth";
 import { LoginPage, ProtectedLayout } from "./pages/LoginPage";
 import { PlaygroundPage } from "./pages/PlaygroundPage";
 import { ExplorePage } from "./pages/ExplorePage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { ThemeProvider } from "./hooks/useTheme";
 import "./style.css";
 
@@ -19,7 +20,7 @@ export default function App() {
               <Route path="settings" element={<SettingsPage />} />
               <Route path=":sessionId" element={<PlaygroundPage />} />
             </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

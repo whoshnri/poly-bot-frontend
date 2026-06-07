@@ -11,7 +11,11 @@ type ChatThreadProps = {
   emptyDescription?: string;
   showTimestamps?: boolean;
   feedback?: FeedbackRequestItem | null;
+  feedbackDismissed?: boolean;
   feedbackSubmitting?: boolean;
+  feedbackSubmitLabel?: string;
+  onFeedbackDismiss?: () => void;
+  onFeedbackRestore?: () => void;
   onFeedbackSubmit?: (answer: {
     selectedOption?: string;
     selectedOptions?: string[];
@@ -27,7 +31,11 @@ export function ChatThread({
   emptyDescription = "Your instruction starts a session. The bot will plan, research, ask for input when needed, then trade or wait.",
   showTimestamps = true,
   feedback,
+  feedbackDismissed = false,
   feedbackSubmitting = false,
+  feedbackSubmitLabel,
+  onFeedbackDismiss,
+  onFeedbackRestore,
   onFeedbackSubmit,
 }: ChatThreadProps) {
   return (
@@ -87,7 +95,20 @@ export function ChatThread({
         </div>
       ) : null}
       <AnimatePresence mode="popLayout">
-        {feedback && onFeedbackSubmit ? (
+        {feedback && feedbackDismissed ? (
+          <motion.button
+            key={`${feedback.requestId}-hidden`}
+            type="button"
+            className="mr-auto max-w-[92%] rounded-2xl border border-dashed border-slate-300/80 bg-white/70 px-4 py-3 text-left text-sm text-slate-600 hover:bg-white dark:border-white/15 dark:bg-black/20 dark:text-neutral-300 dark:hover:bg-black/30"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            onClick={onFeedbackRestore}
+          >
+            Question hidden — tap to show again
+          </motion.button>
+        ) : null}
+        {feedback && !feedbackDismissed && onFeedbackSubmit ? (
           <motion.div
             key={feedback.requestId}
             initial={{ opacity: 0, y: 16, scale: 0.98 }}
@@ -98,6 +119,8 @@ export function ChatThread({
             <FeedbackCard
               feedback={feedback}
               submitting={feedbackSubmitting}
+              submitLabel={feedbackSubmitLabel}
+              onDismiss={onFeedbackDismiss}
               onSubmit={onFeedbackSubmit}
             />
           </motion.div>
