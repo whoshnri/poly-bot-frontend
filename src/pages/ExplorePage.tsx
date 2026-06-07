@@ -11,7 +11,8 @@ import {
   readPreSessionDraft,
   writePreSessionDraft,
 } from "../lib/preSessionDraft";
-import { MarkdownContent } from "../components/MarkdownContent";
+import { ChatThread } from "../components/ChatThread";
+import { exploreMessagesToChatItems } from "../lib/chatView";
 import { useShellContext } from "./LoginPage";
 
 type ExploreMessage = {
@@ -225,13 +226,19 @@ export function ExplorePage() {
     setStatus("Starting session with your selected market...");
     try {
       const sessionTopic = topic.trim() || selected.question;
+      const lastBotReply = [...messages].reverse().find((entry) => entry.role === "bot")?.content;
       const data = await startSession(
         `Research and evaluate markets about: ${sessionTopic}`,
         {
           topic: sessionTopic,
+          summary: lastBotReply?.trim() || sessionTopic,
           queries,
           selectedMarketId: selected.marketId,
           markets,
+          exploreMessages: messages.slice(-6).map((entry) => ({
+            role: entry.role,
+            content: entry.content,
+          })),
         },
       );
       clearPreSessionDraft();
@@ -262,6 +269,8 @@ export function ExplorePage() {
     [markets, selectedMarketId],
   );
 
+  const chatMessages = useMemo(() => exploreMessagesToChatItems(messages), [messages]);
+
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden">
       <p className="sr-only" aria-live="polite">
@@ -273,31 +282,13 @@ export function ExplorePage() {
         ref={threadRef}
       >
         <div className="mx-auto w-full max-w-3xl space-y-4">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={
-                message.role === "user"
-                  ? "ml-auto max-w-[92%] rounded-2xl bg-slate-900 px-4 py-3 text-neutral-100 dark:bg-neutral-100 dark:text-neutral-900"
-                  : "mr-auto max-w-[92%] rounded-2xl border border-slate-300/70 bg-white/90 px-4 py-3 dark:border-white/15 dark:bg-black/30"
-              }
-            >
-              <MarkdownContent
-                content={message.content}
-                className={
-                  message.role === "user"
-                    ? "text-sm leading-relaxed text-neutral-100 dark:text-neutral-900"
-                    : "text-sm leading-relaxed text-slate-800 dark:text-neutral-100"
-                }
-              />
-            </div>
-          ))}
-
-          {(chatLoading || searchLoading) && (
-            <p className="text-sm text-slate-500 dark:text-neutral-400">
-              {searchLoading ? "Searching markets…" : "Thinking…"}
-            </p>
-          )}
+          <ChatThread
+            messages={chatMessages}
+            isRunning={chatLoading || searchLoading}
+            greeting="What should we explore?"
+            emptyDescription="Tell me a topic, event, or thesis and I'll help you find active Polymarket markets before starting research."
+            showTimestamps={false}
+          />
 
           {markets.length > 0 ? (
             <section className="rounded-2xl border border-slate-300/70 bg-white/90 p-4 dark:border-white/15 dark:bg-black/30">

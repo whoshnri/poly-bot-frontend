@@ -89,6 +89,7 @@ export function useSessions(userId: string | null) {
           name: data.name,
           createdAt: data.createdAt,
           updatedAt: data.createdAt,
+          hasPreSession: Boolean(preSession),
           resume: {
             canContinue: false,
             mode: "idle",

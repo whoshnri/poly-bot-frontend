@@ -18,6 +18,7 @@ export type SessionSummary = {
   name: string;
   createdAt: string;
   updatedAt: string;
+  hasPreSession?: boolean;
   resume: SessionResumeState;
   latestStage: {
     sequence: number;

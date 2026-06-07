@@ -1,15 +1,35 @@
 import { AnimatePresence, motion } from "framer-motion";
-import type { ChatMessageItem } from "../types";
+import type { ChatMessageItem, FeedbackRequestItem } from "../types";
 import { formatDate } from "../lib/chatView";
 import { ChatMessageBody } from "./ChatMessageBody";
+import { FeedbackCard } from "./FeedbackCard";
 
 type ChatThreadProps = {
   messages: ChatMessageItem[];
   isRunning: boolean;
   greeting: string;
+  emptyDescription?: string;
+  showTimestamps?: boolean;
+  feedback?: FeedbackRequestItem | null;
+  feedbackSubmitting?: boolean;
+  onFeedbackSubmit?: (answer: {
+    selectedOption?: string;
+    selectedOptions?: string[];
+    customText?: string;
+    textAnswer?: string;
+  }) => void;
 };
 
-export function ChatThread({ messages, isRunning, greeting }: ChatThreadProps) {
+export function ChatThread({
+  messages,
+  isRunning,
+  greeting,
+  emptyDescription = "Your instruction starts a session. The bot will plan, research, ask for input when needed, then trade or wait.",
+  showTimestamps = true,
+  feedback,
+  feedbackSubmitting = false,
+  onFeedbackSubmit,
+}: ChatThreadProps) {
   return (
     <div
       className="mx-auto flex w-full max-w-3xl flex-col gap-4 md:gap-5"
@@ -23,8 +43,7 @@ export function ChatThread({ messages, isRunning, greeting }: ChatThreadProps) {
             {greeting}
           </p>
           <p className="mx-auto mt-3 max-w-xl px-2 text-sm leading-relaxed text-slate-500 dark:text-neutral-400 md:mt-4 md:px-0">
-            Your instruction starts a session. The bot will plan, research, ask
-            for input when needed, then trade or wait.
+            {emptyDescription}
           </p>
         </div>
       ) : (
@@ -48,11 +67,13 @@ export function ChatThread({ messages, isRunning, greeting }: ChatThreadProps) {
             >
               <ChatMessageBody message={message} />
 
-              <header className={`mt-2 flex gap-3 text-[11px] text-slate-500 dark:text-neutral-500 ${message.role === "user" ? "justify-end" : ""}`}>
-                <time dateTime={message.timestamp}>
-                  {formatDate(message.timestamp)}
-                </time>
-              </header>
+              {showTimestamps ? (
+                <header
+                  className={`mt-2 flex gap-3 text-[11px] text-slate-500 dark:text-neutral-500 ${message.role === "user" ? "justify-end" : ""}`}
+                >
+                  <time dateTime={message.timestamp}>{formatDate(message.timestamp)}</time>
+                </header>
+              ) : null}
             </motion.article>
           ))}
         </AnimatePresence>
@@ -65,6 +86,23 @@ export function ChatThread({ messages, isRunning, greeting }: ChatThreadProps) {
           <span>Working...</span>
         </div>
       ) : null}
+      <AnimatePresence mode="popLayout">
+        {feedback && onFeedbackSubmit ? (
+          <motion.div
+            key={feedback.requestId}
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.98 }}
+            transition={{ duration: 0.22 }}
+          >
+            <FeedbackCard
+              feedback={feedback}
+              submitting={feedbackSubmitting}
+              onSubmit={onFeedbackSubmit}
+            />
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

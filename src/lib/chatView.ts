@@ -301,6 +301,40 @@ export function isBotSleeping(events: BotUiEvent[]): boolean {
   return events.some((event) => event.kind === "bot-sleep");
 }
 
+export function hasInFlightGraphRun(events: BotUiEvent[]): boolean {
+  let lastStartIndex = -1;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index]?.kind === "graph-run-start") {
+      lastStartIndex = index;
+      break;
+    }
+  }
+
+  if (lastStartIndex === -1) {
+    return false;
+  }
+
+  for (let index = lastStartIndex + 1; index < events.length; index += 1) {
+    const kind = events[index]?.kind;
+    if (kind === "graph-run-complete" || kind === "graph-run-error") {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export function exploreMessagesToChatItems(
+  messages: Array<{ id: string; role: "user" | "bot"; content: string; timestamp: string }>,
+): ChatMessageItem[] {
+  return messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    timestamp: message.timestamp,
+  }));
+}
+
 export function createLocalUserMessage(content: string): ChatMessageItem {
   return {
     id: `local-user-${Date.now()}`,

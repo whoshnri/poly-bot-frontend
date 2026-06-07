@@ -13,6 +13,7 @@ export type PreSessionPayload = {
   queries: string[];
   selectedMarketId: string;
   markets: DiscoverMarketOption[];
+  exploreMessages?: Array<{ role: "user" | "bot"; content: string }>;
 };
 
 export async function fetchSessionsRequest() {

@@ -131,7 +131,14 @@ export function SessionsRail({
                     }}
                     className={`flex-1 rounded-lg px-3 py-2.5 text-left hover:bg-slate-100 dark:hover:bg-white/10 ${session.id === activeSessionId ? "bg-slate-200 dark:bg-white/12" : ""}`}
                   >
-                    <p className="truncate text-sm text-slate-800 dark:text-neutral-100">{sessionLabel}</p>
+                    <p className="truncate text-sm text-slate-800 dark:text-neutral-100">
+                      {session.name || sessionLabel}
+                    </p>
+                    {session.resume.phase ? (
+                      <p className="mt-0.5 truncate text-[10px] uppercase tracking-[0.1em] text-slate-500 dark:text-neutral-500">
+                        {session.resume.phase}
+                      </p>
+                    ) : null}
                   </button>
                   <button
                     type="button"

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { useNavigate, useParams } from "react-router-dom";
 import { submitFeedbackRequest, fetchPendingFeedbackRequest } from "../api/sessions";
 import { useAuth } from "../hooks/useAuth";
@@ -7,10 +7,16 @@ import { useEventStream } from "../hooks/useEventStream";
 import { useOnboarding } from "../hooks/useOnboarding";
 import { useSettings } from "../hooks/useSettings";
 import type { ChatMessageItem } from "../types";
-import { buildChatView, createLocalUserMessage, isBotSleeping } from "../lib/chatView";
+import {
+  buildChatView,
+  createLocalUserMessage,
+  hasInFlightGraphRun,
+  isBotSleeping,
+} from "../lib/chatView";
 import { isPendingStartForSession } from "../lib/sessionCache";
 import { ChatThread } from "../components/ChatThread";
-import { FeedbackCard } from "../components/FeedbackCard";
+import { PromptComposer } from "../components/PromptComposer";
+import { WorkflowPhaseStepper } from "../components/WorkflowPhaseStepper";
 import { useShellContext } from "./LoginPage";
 
 type PendingRunAction =
@@ -30,6 +36,7 @@ export function PlaygroundPage() {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [localMessages, setLocalMessages] = useState<ChatMessageItem[]>([]);
   const pendingRunRef = useRef<PendingRunAction | null>(null);
+  const autoResumedRef = useRef<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
 
   const onRunFinished = useCallback(() => {
@@ -55,6 +62,7 @@ export function PlaygroundPage() {
     resetEvents();
     setLocalMessages([]);
     setIsRunning(false);
+    autoResumedRef.current = null;
   }, [activeSessionId, resetEvents]);
 
   useEffect(() => {
@@ -184,6 +192,40 @@ export function PlaygroundPage() {
 
   const showResumeBanner = canResumeSession;
 
+  const showComposer = Boolean(
+    activeSessionId &&
+      !feedback &&
+      !isRunning &&
+      !suppressResume &&
+      !settingsLoading &&
+      (botSleeping ||
+        activeSession?.resume.mode === "sleeping" ||
+        (activeSession?.resume.mode === "idle" && !activeSession.resume.justStarted)),
+  );
+
+  const handleComposerSubmit = useCallback(
+    (instruction: string) => {
+      if (!activeSessionId) {
+        return;
+      }
+      void ensureReadyToRun({
+        type: "continue",
+        sessionId: activeSessionId,
+        instruction,
+      }).then((ready) => {
+        if (!ready) {
+          return;
+        }
+        void executePendingRun({
+          type: "continue",
+          sessionId: activeSessionId,
+          instruction,
+        });
+      });
+    },
+    [activeSessionId, ensureReadyToRun, executePendingRun],
+  );
+
   const handleResumeSession = useCallback(async () => {
     if (!activeSessionId) return;
     if (!(await ensureReadyToRun({ type: "resume", sessionId: activeSessionId }))) {
@@ -213,6 +255,53 @@ export function PlaygroundPage() {
   }, [executePendingRun, readiness?.canRunBot]);
 
   useEffect(() => {
+    if (!activeSessionId || !activeSession || !readiness?.canRunBot) {
+      return;
+    }
+    if (autoResumedRef.current === activeSessionId) {
+      return;
+    }
+    if (
+      activeSession.resume.mode !== "continue" ||
+      !activeSession.resume.canContinue ||
+      suppressResume ||
+      isRunning ||
+      feedback ||
+      hasInFlightGraphRun(events)
+    ) {
+      return;
+    }
+
+    autoResumedRef.current = activeSessionId;
+    void (async () => {
+      if (!(await ensureReadyToRun({ type: "resume", sessionId: activeSessionId }))) {
+        autoResumedRef.current = null;
+        return;
+      }
+      setIsRunning(true);
+      setStatus(activeSession.resume.message ?? "Continuing session...");
+      try {
+        const result = await resumeSession(activeSessionId);
+        setStatus(result.message);
+      } catch (error: unknown) {
+        autoResumedRef.current = null;
+        setStatus(error instanceof Error ? error.message : "Failed to resume session.");
+        setIsRunning(false);
+      }
+    })();
+  }, [
+    activeSession,
+    activeSessionId,
+    ensureReadyToRun,
+    events,
+    feedback,
+    isRunning,
+    readiness?.canRunBot,
+    resumeSession,
+    suppressResume,
+  ]);
+
+  useEffect(() => {
     if (!activeSessionId) {
       navigate("/", { replace: true });
     }
@@ -228,27 +317,22 @@ export function PlaygroundPage() {
         className="no-scrollbar flex-1 overflow-y-auto overscroll-y-contain px-4 pb-6 pt-[calc(3.5rem+env(safe-area-inset-top))] md:px-8 md:pb-8 md:pt-6"
         ref={threadRef}
       >
-        <ChatThread messages={messages} isRunning={isRunning && !feedback} greeting={greeting} />
-        <AnimatePresence mode="popLayout">
-          {feedback ? (
-            <motion.div
-              key={feedback.requestId}
-              className="mt-2 md:mt-4"
-              initial={{ opacity: 0, y: 16, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.98 }}
-              transition={{ duration: 0.22 }}
-            >
-              <FeedbackCard
-                feedback={feedback}
-                submitting={feedbackSubmitting}
-                onSubmit={(answer) => {
-                  void handleFeedbackSubmit(answer);
-                }}
-              />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
+        {activeSession?.resume.phase ? (
+          <WorkflowPhaseStepper
+            phase={activeSession.resume.phase}
+            skippedDiscover={activeSession.hasPreSession}
+          />
+        ) : null}
+        <ChatThread
+          messages={messages}
+          isRunning={isRunning && !feedback}
+          greeting={greeting}
+          feedback={feedback}
+          feedbackSubmitting={feedbackSubmitting}
+          onFeedbackSubmit={(answer) => {
+            void handleFeedbackSubmit(answer);
+          }}
+        />
       </motion.div>
 
       <motion.div layout className="shrink-0 px-4 pb-safe pt-3 backdrop-blur md:border-transparent md:bg-transparent md:px-8 md:pb-4 dark:border-white/10 dark:bg-black/30 md:dark:bg-transparent">
@@ -278,12 +362,16 @@ export function PlaygroundPage() {
             </button>
           </div>
         ) : null}
-        {botSleeping && activeSessionId ? (
-          <div className="mx-auto w-full max-w-3xl rounded-2xl border border-slate-300/70 bg-white/90 p-4 dark:border-white/15 dark:bg-neutral-900/90">
-            <p className="text-sm text-slate-600 dark:text-neutral-300">
-              The bot is sleeping. Send a new instruction in chat to pivot or wake it.
-            </p>
-          </div>
+        {showComposer ? (
+          <PromptComposer
+            disabled={isRunning || settingsLoading}
+            placeholder={
+              botSleeping || activeSession?.resume.mode === "sleeping"
+                ? "Send a new instruction to wake the bot or pivot…"
+                : "Tell the bot what to research or how to act…"
+            }
+            onSubmit={handleComposerSubmit}
+          />
         ) : null}
       </motion.div>
     </div>
